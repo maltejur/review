@@ -8,6 +8,7 @@ from typing import Optional
 
 from .exceptions import Error
 from .git import Git
+from .jujutsu import Jujutsu
 from .mercurial import Mercurial
 from .repository import Repository
 
@@ -16,7 +17,7 @@ def find_repo_root(path: str) -> Optional[str]:
     """Lightweight check for a repo in/under the specified path."""
     path = os.path.abspath(path)
     while os.path.split(path)[1]:
-        if Mercurial.is_repo(path) or Git.is_repo(path):
+        if Mercurial.is_repo(path) or Jujutsu.is_repo(path) or Git.is_repo(path):
             return path
         path = os.path.abspath(os.path.join(path, os.path.pardir))
     return None
@@ -26,6 +27,13 @@ def probe_repo(path: str) -> Optional[Repository]:
     """Attempt to find a repository at `path`."""
     try:
         return Mercurial(path)
+    except ValueError:
+        pass
+
+    # NOTE: Jujutsu is expected to have a co-located `.git` directory, so let's detect a `.jj`
+    # directory first.
+    try:
+        return Jujutsu(path)
     except ValueError:
         pass
 
@@ -46,7 +54,7 @@ def repo_from_args(args: argparse.Namespace) -> Repository:
     if hasattr(args, "path") and args.path:
         repo = probe_repo(args.path)
         if not repo:
-            raise Error("%s: Not a repository: .hg / .git" % args.path)
+            raise Error("%s: Not a repository: .hg / .jj / .git" % args.path)
 
     else:
         # Walk parents to find repository root.
@@ -55,7 +63,7 @@ def repo_from_args(args: argparse.Namespace) -> Repository:
             repo = probe_repo(path)
         if not repo:
             raise Error(
-                "Not a repository (or any of the parent directories): .hg / .git"
+                "Not a repository (or any of the parent directories): .hg / .jj / .git"
             )
 
     repo.set_args(args)
