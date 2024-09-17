@@ -12,15 +12,19 @@ from typing import (
 from mozphab import environment
 
 from .commits import Commit
+from .config import config
 from .diff import Diff
 from .exceptions import Error
 from .git import Git
 from .helpers import (
     is_valid_email,
+    short_node,
+    temporary_binary_file,
     temporary_file,
 )
 from .logger import logger
 from .repository import Repository
+from .spinner import wait_message
 from .subprocess_wrapper import check_call, check_output
 
 
@@ -257,12 +261,6 @@ class Jujutsu(Repository):
         # TODO: Think about a concrete bug model to disclaim here.
         return []
 
-    def checkout(self, node: str):
-        # The purpose of this method (in general) is to change local state so that a new message can
-        # be applied to a change/commit/revision. Because Jujutsu can update _any_ change's message
-        # without changing what's checked out, we don't need to do anything here.
-        pass
-
     def get_diff(self, commit: Commit) -> Diff:
         """Create a Diff object with changes."""
         # NOTE: If we don't do this, then we break on a `lesscontext` member missing from `args`.
@@ -326,6 +324,90 @@ class Jujutsu(Repository):
         return self.__git_repo.get_public_node(node)
 
     # TODO: Functionality to make `local_uplift_if_possible` work?
+
+    def is_worktree_clean(self):
+        """Check if the working tree is clean."""
+        check_call(["jj", "git", "export"])
+        return True
+
+    def check_node(self, node: str) -> str:
+        """Check if the node exists.
+
+        Calls `hg2git` if node is not found and cinnabar extension is installed.
+
+        Returns a node if found.
+
+        Raises NotFoundError if not found.
+        """
+        return self.__git_repo.check_node(node)
+
+    def before_patch(self, node: str, name: str):
+        """Prepare repository to apply the patches.
+
+        Args:
+            node - SHA1 of the base commit
+            name - name of the bookmark to be created
+        """
+
+        if node:
+            with wait_message("Checking out %s.." % short_node(node)):
+                check_call(["jj", "new", node])
+            logger.info("Checked out %s", short_node(node))
+
+        if name and not self.args.no_branch and config.create_branch:
+            branches = set(
+                check_output(
+                    ["jj", "bookmark", "list", "--template", 'name ++ "\n"'],
+                    strip=False,
+                )
+            )
+            branches = [re.sub("[ *]", "", b) for b in branches]
+            branch_name = name
+            i = 0
+            while branch_name in branches:
+                i += 1
+                branch_name = "%s_%s" % (name, i)
+
+            check_call(["jj", "bookmark", "create", branch_name])
+            logger.info("Created bookmark %s", branch_name)
+
+    def apply_patch(self, diff: str, body: str, author: str, author_date: str):
+        # NOTE: `before_patch` ensures that we are editing a new, empty commit on the base we want.
+
+        # apply the patch as a binary file to ensure the correct line endings
+        # is used.
+        # TODO: Use `jj`'s built-in patching facilities when it exists (see
+        # <https://github.com/martinvonz/jj/issues/2702>).
+        with temporary_binary_file(diff.encode("utf8")) as patch_file:
+            # NOTE: We avoid `self.__git_repo.git_call` because it changes the CWD.
+            self.__git_repo.git.call(["apply", patch_file], cwd=self.path)
+
+        # TODO: author date
+        # TODO: dedupe with other `describe` usage
+        with temporary_file(body) as message_path:
+            with open(message_path) as message_file:
+                check_call(
+                    ["jj", "describe", "--author", author, "--stdin"],
+                    stdin=message_file,
+                )
+
+        if not self.args.no_branch and config.create_branch:
+            # # TODO: Advance the bookmark. We don't have the name, because it's presumed that
+            # # working state in other repos will track it. So, where will it come from?
+
+            # # NOTE: Since we created and put a bookmark on this commit already, we can query `jj` for
+            # # a single bookmark's name, and be confident that it's the one we want.
+
+            # # TODO: use `--advance-branches` if/when implemented (see
+            # # <https://github.com/martinvonz/jj/issues/2338>).
+
+            # check_call(["jj", "bookmark", "move", …])
+            pass
+
+        check_call(["jj", "new"])
+
+    def format_patch(self, diff: str, body: str, author: str, author_date: str) -> str:
+        return diff
 
     # ----
     # Methods private to this abstraction.
