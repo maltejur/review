@@ -29,6 +29,11 @@ from .subprocess_wrapper import check_call, check_output
 
 
 class Jujutsu(Repository):
+    @classmethod
+    def is_repo(cls, path: str) -> bool:
+        """Quick check for repository at specified path."""
+        return os.path.exists(os.path.join(path, ".jj"))
+
     # ----
     # Methods expected from callers of the `Repository` interface:
     # ----

@@ -17,7 +17,7 @@ def find_repo_root(path: str) -> Optional[str]:
     """Lightweight check for a repo in/under the specified path."""
     path = os.path.abspath(path)
     while os.path.split(path)[1]:
-        if Mercurial.is_repo(path) or Git.is_repo(path):
+        if Mercurial.is_repo(path) or Jujutsu.is_repo(path) or Git.is_repo(path):
             return path
         path = os.path.abspath(os.path.join(path, os.path.pardir))
     return None
