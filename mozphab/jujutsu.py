@@ -145,6 +145,7 @@ class Jujutsu(Repository):
 
         boundary = "--%s--\n" % uuid.uuid4().hex
         log = self.__cli_log(
+            reversed=True,
             template="".join(
                 [
                     "separate('\n', ",
@@ -387,7 +388,12 @@ class Jujutsu(Repository):
     # Methods private to this abstraction.
     # ----
 
-    def __cli_log(self, *, revset: str, template: str, **kwargs):
+    def __cli_log(
+        self, *, revset: str, template: str, reversed: bool = False, **kwargs
+    ):
+        options = []
+        if reversed:
+            options.append("--reversed")
         return check_output(
             [
                 "jj",
@@ -398,7 +404,9 @@ class Jujutsu(Repository):
                 revset,
                 "--template",
                 template,
-            ],
+            ]
+            + options
+            + ["--"],
             **kwargs,
         )
 
