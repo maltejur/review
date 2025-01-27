@@ -14,7 +14,7 @@ from mozphab import environment
 from .commits import Commit
 from .config import config
 from .diff import Diff
-from .exceptions import Error
+from .exceptions import Error, CommandError
 from .git import Git
 from .helpers import (
     is_valid_email,
@@ -339,7 +339,12 @@ class Jujutsu(Repository):
 
         Raises NotFoundError if not found.
         """
-        return self.__git_repo.check_node(node)
+        try:
+            return self.__cli_log(revset=node, template="commit_id", split=False)
+        except CommandError:
+            # Call the git backend as well, as it will try to resolve any
+            # cinnabar hashes.
+            return self.__git_repo.check_node(node)
 
     def before_patch(self, node: str, name: str):
         """Prepare repository to apply the patches.
